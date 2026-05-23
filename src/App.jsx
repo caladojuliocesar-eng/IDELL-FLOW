@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 
 const initialData = [
   {
@@ -90,21 +91,34 @@ export default function App() {
     signOut(auth);
   };
 
-  const [projects, setProjects] = useState(() => {
-    const saved = localStorage.getItem('idelli_flow_projects');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("Erro ao carregar dados do localStorage:", e);
-      }
-    }
-    return initialData;
-  });
+  const [projects, setProjects] = useState([]);
+  const [drawerProgressNotes, setDrawerProgressNotes] = useState('');
 
+  // Sync projects from Firestore in real-time
   useEffect(() => {
-    localStorage.setItem('idelli_flow_projects', JSON.stringify(projects));
-  }, [projects]);
+    if (!user) return;
+    const q = query(collection(db, "projects"), orderBy("order", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const projList = [];
+      snapshot.forEach((doc) => {
+        projList.push({ id: doc.id, ...doc.data() });
+      });
+      setProjects(projList);
+    }, (error) => {
+      console.error("Erro ao carregar projetos do Firestore:", error);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Sync details drawer notes state when active project changes
+  useEffect(() => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (project) {
+      setDrawerProgressNotes(project.progressNotes || '');
+    } else {
+      setDrawerProgressNotes('');
+    }
+  }, [selectedProjectId, projects]);
   const [activeView, setActiveView] = useState('list'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -164,46 +178,73 @@ export default function App() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const newProject = {
       ...formData,
-      id: Math.random().toString(36).substr(2, 9),
       estimatedDays: parseInt(formData.estimatedDays, 10),
-      progressNotes: formData.progressNotes || ''
+      progressNotes: formData.progressNotes || '',
+      order: projects.length,
+      createdAt: new Date().toISOString()
     };
-    setProjects([...projects, newProject]);
-    setIsModalOpen(false);
-    setFormData({
-      clientName: '',
-      architectName: '',
-      hasDesign: true,
-      serviceDate: new Date().toISOString().split('T')[0],
-      presentationDate: '',
-      estimatedDays: 1,
-      status: 'briefing',
-      isReady: false,
-      notes: '',
-      progressNotes: ''
-    });
+    
+    try {
+      await addDoc(collection(db, "projects"), newProject);
+      setIsModalOpen(false);
+      setFormData({
+        clientName: '',
+        architectName: '',
+        hasDesign: true,
+        serviceDate: new Date().toISOString().split('T')[0],
+        presentationDate: '',
+        estimatedDays: 1,
+        status: 'briefing',
+        isReady: false,
+        notes: '',
+        progressNotes: ''
+      });
+    } catch (err) {
+      console.error("Erro ao adicionar lead no Firestore:", err);
+    }
   };
 
-  const deleteProject = (id) => {
-    setProjects(projects.filter(p => p.id !== id));
-    if (selectedProjectId === id) setSelectedProjectId(null);
+  const deleteProject = async (id) => {
+    try {
+      await deleteDoc(doc(db, "projects", id));
+      if (selectedProjectId === id) setSelectedProjectId(null);
+    } catch (err) {
+      console.error("Erro ao excluir lead do Firestore:", err);
+    }
   };
 
-  const changeProjectStatus = (projectId, newStatus) => {
-    setProjects(projects.map(p => p.id === projectId ? { ...p, status: newStatus } : p));
-    setActiveStatusMenuId(null);
+  const changeProjectStatus = async (projectId, newStatus) => {
+    try {
+      const docRef = doc(db, "projects", projectId);
+      await updateDoc(docRef, { status: newStatus });
+      setActiveStatusMenuId(null);
+    } catch (err) {
+      console.error("Erro ao alterar status no Firestore:", err);
+    }
   };
 
-  const toggleProjectReady = (projectId) => {
-    setProjects(projects.map(p => p.id === projectId ? { ...p, isReady: !p.isReady } : p));
+  const toggleProjectReady = async (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    try {
+      const docRef = doc(db, "projects", projectId);
+      await updateDoc(docRef, { isReady: !project.isReady });
+    } catch (err) {
+      console.error("Erro ao alternar status do desenho no Firestore:", err);
+    }
   };
 
-  const updateProgressNotes = (projectId, notes) => {
-    setProjects(projects.map(p => p.id === projectId ? { ...p, progressNotes: notes } : p));
+  const updateProgressNotes = async (projectId, notes) => {
+    try {
+      const docRef = doc(db, "projects", projectId);
+      await updateDoc(docRef, { progressNotes: notes });
+    } catch (err) {
+      console.error("Erro ao atualizar diário no Firestore:", err);
+    }
   };
 
   const handleDragStartKanban = (e, project) => {
@@ -231,18 +272,25 @@ export default function App() {
     setDragOverColumn(null);
   };
 
-  const changePriority = (id, direction) => {
+  const changePriority = async (id, direction) => {
     const index = projects.findIndex(p => p.id === id);
     if (index === -1) return;
     
-    const newProjects = [...projects];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     
     if (targetIndex >= 0 && targetIndex < projects.length) {
-      const temp = newProjects[index];
-      newProjects[index] = newProjects[targetIndex];
-      newProjects[targetIndex] = temp;
-      setProjects(newProjects);
+      const projectA = projects[index];
+      const projectB = projects[targetIndex];
+      
+      const docRefA = doc(db, "projects", projectA.id);
+      const docRefB = doc(db, "projects", projectB.id);
+      
+      try {
+        await updateDoc(docRefA, { order: projectB.order !== undefined ? projectB.order : targetIndex });
+        await updateDoc(docRefB, { order: projectA.order !== undefined ? projectA.order : index });
+      } catch (err) {
+        console.error("Erro ao alterar prioridade no Firestore:", err);
+      }
     }
   };
 
@@ -859,8 +907,9 @@ export default function App() {
                   <span className="text-[9px] text-slate-400 italic">Salva automaticamente</span>
                 </div>
                 <textarea 
-                  value={project.progressNotes || ''} 
-                  onChange={(e) => updateProgressNotes(project.id, e.target.value)}
+                  value={drawerProgressNotes} 
+                  onChange={(e) => setDrawerProgressNotes(e.target.value)}
+                  onBlur={() => updateProgressNotes(project.id, drawerProgressNotes)}
                   rows="6" 
                   className="w-full bg-slate-50 border border-slate-200 focus:border-[#800c30] focus:ring-1 focus:ring-[#800c30] rounded-xl px-4 py-3 text-slate-700 text-xs leading-relaxed focus:outline-none transition-all resize-none placeholder:text-slate-300" 
                   placeholder="Registre aqui as mudanças no projeto, escolhas de MDF, retorno das reuniões de andamento, pendências com arquitetos..."
