@@ -62,63 +62,16 @@ const formatDate = (dateString) => {
 };
 
 export default function App() {
+  // 1. ALL States Declarations
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginError('');
-    try {
-      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
-    } catch (err) {
-      console.error(err);
-      setLoginError('Credenciais inválidas. Verifique seu e-mail e senha.');
-    }
-  };
-
-  const handleLogout = () => {
-    signOut(auth);
-  };
-
   const [projects, setProjects] = useState([]);
   const [drawerProgressNotes, setDrawerProgressNotes] = useState('');
-
-  // Sync projects from Firestore in real-time
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, "projects"), orderBy("order", "asc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const projList = [];
-      snapshot.forEach((doc) => {
-        projList.push({ id: doc.id, ...doc.data() });
-      });
-      setProjects(projList);
-    }, (error) => {
-      console.error("Erro ao carregar projetos do Firestore:", error);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // Sync details drawer notes state when active project changes
-  useEffect(() => {
-    const project = projects.find(p => p.id === selectedProjectId);
-    if (project) {
-      setDrawerProgressNotes(project.progressNotes || '');
-    } else {
-      setDrawerProgressNotes('');
-    }
-  }, [selectedProjectId, projects]);
+  
   const [activeView, setActiveView] = useState('list'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -147,6 +100,57 @@ export default function App() {
   });
 
   const todayDateString = new Date().toISOString().split('T')[0];
+
+  // 2. ALL useEffect Hooks
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync projects from Firestore in real-time
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "projects"), orderBy("order", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const projList = [];
+      snapshot.forEach((doc) => {
+        projList.push({ id: doc.id, ...doc.data() });
+      });
+      setProjects(projList);
+    }, (error) => {
+      console.error("Erro ao carregar projetos do Firestore:", error);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Sync details drawer notes state when active project changes
+  useEffect(() => {
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (project) {
+      setDrawerProgressNotes(project.progressNotes || '');
+    } else {
+      setDrawerProgressNotes('');
+    }
+  }, [selectedProjectId, projects]);
+
+  // 3. Handlers
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+    } catch (err) {
+      console.error(err);
+      setLoginError('Credenciais inválidas. Verifique seu e-mail e senha.');
+    }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
   const Icons = {
     List: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"></path></svg>,
