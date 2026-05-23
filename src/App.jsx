@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { auth } from './firebase';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const initialData = [
   {
@@ -59,6 +61,35 @@ const formatDate = (dateString) => {
 };
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+    } catch (err) {
+      console.error(err);
+      setLoginError('Credenciais inválidas. Verifique seu e-mail e senha.');
+    }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
   const [projects, setProjects] = useState(() => {
     const saved = localStorage.getItem('idelli_flow_projects');
     if (saved) {
@@ -915,6 +946,87 @@ export default function App() {
     </div>
   );
 
+  const renderLoginView = () => (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 selection:bg-[#800c30]/20 selection:text-[#800c30]">
+      <div className="w-full max-w-md bg-slate-800 border border-slate-700/50 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        {/* Background ambient light */}
+        <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-[#800c30]/20 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+
+        <div className="relative">
+          {/* Logo / Header */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-[#800c30] flex items-center justify-center shadow-lg shadow-[#800c30]/20 mb-4">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-10.5h16.5m-16.5 3h16.5m-16.5 3h16.5M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-black tracking-tight text-white">IDÉLLI Flow</h2>
+            <p className="text-xs text-slate-400 mt-1.5 font-medium text-center">Gestão Inteligente de Projetos e Leads</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleLogin} className="space-y-5">
+            {loginError && (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs font-semibold leading-relaxed">
+                {loginError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">E-mail Corporativo</label>
+              <input 
+                required 
+                type="email" 
+                value={loginEmail} 
+                onChange={(e) => setLoginEmail(e.target.value)} 
+                className="w-full bg-slate-900/50 border border-slate-700 focus:border-[#800c30] focus:ring-1 focus:ring-[#800c30] rounded-xl px-4 py-3 text-white text-sm transition-all outline-none" 
+                placeholder="nome@idelli.com.br" 
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Senha de Acesso</label>
+              <input 
+                required 
+                type="password" 
+                value={loginPassword} 
+                onChange={(e) => setLoginPassword(e.target.value)} 
+                className="w-full bg-slate-900/50 border border-slate-700 focus:border-[#800c30] focus:ring-1 focus:ring-[#800c30] rounded-xl px-4 py-3 text-white text-sm transition-all outline-none" 
+                placeholder="••••••••" 
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full py-3.5 rounded-xl bg-[#800c30] hover:bg-[#6b0928] text-white text-sm font-bold shadow-lg shadow-[#800c30]/15 hover:shadow-xl transition-all"
+            >
+              Acessar Painel
+            </button>
+          </form>
+
+          {/* Info Footer */}
+          <div className="mt-8 text-center text-[10px] text-slate-500 font-semibold tracking-wide uppercase">
+            Área Restrita • IDÉLLI Design
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
+        <div className="w-12 h-12 rounded-full border-4 border-slate-700 border-t-[#800c30] animate-spin mb-4" />
+        <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Carregando IDÉLLI Flow...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return renderLoginView();
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-3 sm:p-6 lg:p-8">
       <div className="max-w-[1440px] mx-auto space-y-6">
@@ -929,6 +1041,10 @@ export default function App() {
               IDÉLLI Flow
             </h1>
             <p className="text-xs text-slate-500 mt-1 font-medium">Gestão de leads, modelagem 3D & cronograma para móveis de alto padrão</p>
+            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Conectado como {user.email}
+            </div>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
@@ -968,6 +1084,18 @@ export default function App() {
             >
               <Icons.Plus />
               Novo Lead
+            </button>
+
+            {/* Logout Action Button */}
+            <button 
+              id="logout-btn"
+              onClick={handleLogout}
+              className="inline-flex items-center justify-center p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 border border-slate-200/85 transition-all"
+              title="Sair da Conta"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
             </button>
           </div>
         </header>
